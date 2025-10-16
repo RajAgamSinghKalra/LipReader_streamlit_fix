@@ -1,4 +1,3 @@
-pip
 tensorflow
 opencv-python
 cv2
