@@ -1,5 +1,6 @@
 numpy
-tensorflow
+tensorflow==2.13.1
+# Pin TensorFlow to a TF/Keras 2.x release so H5 weight loading stays compatible.
 
 ffmpeg-python
 #numpy<2
