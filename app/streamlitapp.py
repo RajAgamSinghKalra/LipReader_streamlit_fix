@@ -105,6 +105,21 @@ import matplotlib.cm as cm
 
 import urllib.request
 import os
+import gdown
+
+def download_model_weights():
+    model_path = "models/checkpoint.weights.h5"
+    os.makedirs("models", exist_ok=True)
+    
+    if not os.path.exists(model_path):
+        st.info("Downloading model weights...")
+        
+        # Direct download link (if file is publicly shared)
+        url = "https://drive.google.com/file/d/1Rv81h5t_VP8ryrDUe9qtIsZAwe-0pL1p/view?usp=sharing"
+        gdown.download(url, model_path, quiet=False)
+        
+        st.success("Model weights downloaded successfully!")
+
 
 def download_dlib_model():
     model_url = "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
