@@ -33,7 +33,7 @@ def load_model() -> Sequential:
 
     model.add(Dense(char_to_num.vocabulary_size()+1, kernel_initializer='he_normal', activation='softmax'))
     
-    model.load_weights(os.path.join('..','models','checkpoint.weights.h5'))
+    model.load_weights(os.path.join('models','checkpoint.weights.h5'))
     
     return model
 
