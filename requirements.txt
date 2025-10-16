@@ -1,5 +1,6 @@
 tensorflow
-numpy<2
+numpy
+#numpy<2
 opencv-python
 opencv-python-headless==4.5.5.64
 gdown
