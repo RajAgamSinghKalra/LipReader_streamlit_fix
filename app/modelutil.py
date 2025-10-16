@@ -1,5 +1,10 @@
+import os
+os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+
 import tensorflow as tf
 from pathlib import Path
+import h5py
+import inspect
 from tensorflow.keras.layers import RNN, LSTMCell
 from tensorflow.keras.models import Sequential 
 from tensorflow.keras.layers import Conv3D, LSTM, Dense, Dropout, Bidirectional, MaxPool3D, Activation, Reshape, SpatialDropout3D, BatchNormalization, TimeDistributed, Flatten
@@ -35,6 +40,58 @@ def _resolve_weights_path() -> Path:
         "available before running predictions."
     )
 
+
+def _get_legacy_hdf5_loader():
+    candidates = []
+    try:
+        # TensorFlow 2.x internal location
+        from tensorflow.python.keras.saving import hdf5_format as tf_hdf5  # type: ignore
+        candidates.append(tf_hdf5)
+    except Exception:
+        pass
+    try:
+        # Keras 3 legacy compatibility path
+        from keras.src.saving.legacy import hdf5_format as keras_hdf5  # type: ignore
+        candidates.append(keras_hdf5)
+    except Exception:
+        pass
+    for module in candidates:
+        if hasattr(module, "load_weights_from_hdf5_group"):
+            return module
+    return None
+
+
+def _load_weights_with_compat(model: Sequential, weights_path: Path) -> None:
+    try:
+        model.load_weights(str(weights_path))
+        return
+    except Exception as exc:
+        message = str(exc)
+        if "object 'vars' doesn't exist" not in message and "Unable to synchronously open object" not in message:
+            raise
+
+    legacy_loader = _get_legacy_hdf5_loader()
+    if legacy_loader is None:
+        raise RuntimeError(
+            "Failed to load legacy HDF5 weights and no compatibility loader is available."
+        )
+
+    with h5py.File(weights_path, "r") as h5file:
+        group = h5file
+        if "layer_names" not in group.attrs and "model_weights" in group:
+            group = group["model_weights"]
+
+        load_fn = legacy_loader.load_weights_from_hdf5_group
+        signature = inspect.signature(load_fn)
+        kwargs = {}
+        if "skip_mismatch" in signature.parameters:
+            kwargs["skip_mismatch"] = False
+        if "reshape" in signature.parameters:
+            kwargs["reshape"] = False
+
+        load_fn(group, model.layers, **kwargs)
+
+
 def load_model() -> Sequential:
     model = Sequential()
 
@@ -64,7 +121,7 @@ def load_model() -> Sequential:
     model.add(Dense(char_to_num.vocabulary_size()+1, kernel_initializer='he_normal', activation='softmax'))
     
     weights_path = _resolve_weights_path()
-    model.load_weights(str(weights_path))
+    _load_weights_with_compat(model, weights_path)
     
     return model
 
