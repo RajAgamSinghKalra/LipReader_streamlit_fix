@@ -108,7 +108,7 @@ import os
 import gdown
 
 def download_model_weights():
-    model_path = "models/checkpoint.weights.h5"
+    model_path = "checkpoint.weights.h5"
     os.makedirs("models", exist_ok=True)
     
     if not os.path.exists(model_path):
