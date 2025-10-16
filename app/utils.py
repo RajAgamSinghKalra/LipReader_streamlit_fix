@@ -141,6 +141,25 @@ import cv2
 import os
 import dlib
 import numpy as np
+import urllib
+
+def download_dlib_model():
+    model_url = "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
+    model_path = "shape_predictor_68_face_landmarks.dat"
+    
+    if not os.path.exists(model_path):
+        st.info("Downloading dlib model...")
+        # Download compressed version
+        compressed_path = model_path + ".bz2"
+        urllib.request.urlretrieve(model_url, compressed_path)
+        
+        # Extract (you'll need bz2 module)
+        import bz2
+        with bz2.open(compressed_path, 'rb') as f_in:
+            with open(model_path, 'wb') as f_out:
+                f_out.write(f_in.read())
+        os.remove(compressed_path)
+download_dlib_model()
 
 predictor_path = "shape_predictor_68_face_landmarks.dat"
 detector = dlib.get_frontal_face_detector()
