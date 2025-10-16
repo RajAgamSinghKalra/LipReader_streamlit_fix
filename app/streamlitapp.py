@@ -308,13 +308,7 @@ if uploaded_file is not None:
     # Save uploaded file to temporary location with correct extension
     file_extension = os.path.splitext(uploaded_file.name)[1].lower()
     
-    # Create temporary file with proper handling
-    if file_extension == '.mpg':
-        temp_suffix = '.mpg'
-    else:
-        temp_suffix = file_extension
-    
-    with tempfile.NamedTemporaryFile(delete=False, suffix=temp_suffix) as tmp_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_file:
         tmp_file.write(uploaded_file.getvalue())
         temp_video_path = tmp_file.name
 
@@ -325,16 +319,44 @@ if uploaded_file is not None:
     with col1: 
         st.info('Uploaded video')
         
-        # Display the uploaded video directly from memory
-        uploaded_file.seek(0)  # Reset file pointer
-        video_bytes = uploaded_file.read()
-        st.video(video_bytes)
+        # Convert MPG to MP4 for browser display
+        if file_extension == '.mpg':
+            # Create a new temporary file for the converted MP4
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as mp4_file:
+                converted_path = mp4_file.name
+            
+            # Convert using ffmpeg
+            import subprocess
+            result = subprocess.run([
+                'ffmpeg', '-i', temp_video_path, '-vcodec', 'libx264', 
+                converted_path, '-y'
+            ], capture_output=True, text=True)
+            
+            if result.returncode == 0 and os.path.exists(converted_path):
+                display_path = converted_path
+            else:
+                st.warning("MPG conversion failed, trying to display original")
+                display_path = temp_video_path
+        else:
+            display_path = temp_video_path
+        
+        # Display the video
+        try:
+            video_file = open(display_path, 'rb')
+            video_bytes = video_file.read()
+            st.video(video_bytes)
+            video_file.close()
+        except Exception as e:
+            st.error(f"Could not display video: {e}")
+            # Fallback: display original uploaded file
+            uploaded_file.seek(0)
+            st.video(uploaded_file.read())
 
     with col2: 
         st.info('Processing video...')
         try:
             with st.spinner('Loading and processing video...'):
-                # Load and process video using the temporary file
+                # Load and process video using the original temp file
                 video = load_data(tf.convert_to_tensor(temp_video_path))
             
             if video is not None and len(video) > 0:
@@ -395,6 +417,10 @@ if uploaded_file is not None:
             try:
                 if os.path.exists(temp_video_path):
                     os.unlink(temp_video_path)
+                # Clean up converted MP4 file if it was created
+                if file_extension == '.mpg' and 'converted_path' in locals():
+                    if os.path.exists(converted_path):
+                        os.unlink(converted_path)
                 if os.path.exists('animation.gif'):
                     os.remove('animation.gif')
             except:
