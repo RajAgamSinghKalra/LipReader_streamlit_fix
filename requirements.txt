@@ -4,7 +4,7 @@ oprncv-python-headless
 cmake
 gdown
 imageio
-#dlib
-dlib-19.24.99-cp312-cp312-win_amd64.whl
+dlib-bin
+#dlib-19.24.99-cp312-cp312-win_amd64.whl
 matplotlib
 numpy
