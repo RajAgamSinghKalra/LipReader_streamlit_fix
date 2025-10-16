@@ -1,5 +1,6 @@
 tensorflow
 numpy
+ffmpeg-python
 #numpy<2
 #opencv-python
 opencv-python-headless
