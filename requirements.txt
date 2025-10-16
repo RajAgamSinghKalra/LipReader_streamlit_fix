@@ -4,6 +4,6 @@ cv2
 cmake
 gdown
 imageio
-dlib-20.0.0-cp313-cp313-win_amd64.whl
+dlib-19.24.99-cp312-cp312-win_amd64.whl
 matplotlib
 numpy
