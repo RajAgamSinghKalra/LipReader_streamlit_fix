@@ -1,4 +1,6 @@
 import os
+from typing import List, Tuple
+
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 
 '''# Import all of the dependencies
@@ -113,6 +115,7 @@ import gdown
 WEIGHTS_FILENAME = "checkpoint.weights.h5"
 WEIGHTS_FILE_ID = "1Rv81h5t_VP8ryrDUe9qtIsZAwe-0pL1p"
 WEIGHTS_URL = f"https://drive.google.com/uc?id={WEIGHTS_FILE_ID}"
+SEGMENT_LENGTH = 75
 
 
 def _candidate_weight_paths() -> list[Path]:
@@ -248,6 +251,29 @@ def prepare_viridis_gif(video_frames):
     except Exception as e:
         st.error(f"Error creating GIF: {e}")
         return None
+
+
+def split_into_segments(frames: np.ndarray, segment_length: int = SEGMENT_LENGTH) -> List[np.ndarray]:
+    """Split the video into 75-frame chunks, padding the last chunk if needed."""
+    if frames.ndim != 4:
+        raise ValueError(f"Expected video frames with 4 dimensions, got shape {frames.shape}")
+
+    total_frames = frames.shape[0]
+    segments: List[np.ndarray] = []
+
+    for start in range(0, total_frames, segment_length):
+        chunk = frames[start : start + segment_length]
+        if chunk.shape[0] == 0:
+            continue
+
+        if chunk.shape[0] < segment_length:
+            pad_frame = chunk[-1]
+            padding = np.repeat(pad_frame[np.newaxis, ...], segment_length - chunk.shape[0], axis=0)
+            chunk = np.concatenate([chunk, padding], axis=0)
+
+        segments.append(chunk)
+
+    return segments
 
 '''# File uploader - main functionality for deployed app
 uploaded_file = st.file_uploader("Upload a video file", type=['mp4', 'avi', 'mov', 'mkv', 'webm', 'mpg'])
@@ -418,13 +444,14 @@ if uploaded_file is not None:
             with st.spinner('Loading and processing video...'):
                 # Load and process video using the original temp file
                 video = load_data(tf.convert_to_tensor(temp_video_path))
+                video_np = np.asarray(video)
             
-            if video is not None and len(video) > 0:
-                st.success(f"Video loaded successfully! Shape: {video.shape}")
+            if video_np is not None and len(video_np) > 0:
+                st.success(f"Video loaded successfully! Shape: {video_np.shape}")
                 
                 # Process for GIF
                 with st.spinner('Creating visualization...'):
-                    video_viridis = prepare_viridis_gif(video)
+                    video_viridis = prepare_viridis_gif(video_np)
                 
                 if video_viridis is not None and len(video_viridis) > 0:
                     # Save GIF
@@ -437,29 +464,46 @@ if uploaded_file is not None:
                 st.info('Making prediction...')
                 with st.spinner('Running model prediction...'):
                     model = load_model()
-                    
-                    # Ensure video has correct shape for prediction
-                    if video.shape[0] < 75:
-                        st.warning(f"Video has {video.shape[0]} frames. Padding to 75.")
-                        padding = np.zeros((75 - video.shape[0], video.shape[1], video.shape[2], video.shape[3]))
-                        video = np.concatenate([video, padding], axis=0)
-                    elif video.shape[0] > 75:
-                        st.warning(f"Video has {video.shape[0]} frames. Truncating to 75.")
-                        video = video[:75]
-                    
-                    yhat = model.predict(tf.expand_dims(video, axis=0), verbose=0)
-                    decoder = tf.keras.backend.ctc_decode(yhat, [75], greedy=True)[0][0].numpy()
-                    
-                    # Filter out padding tokens (usually 0)
-                    decoder = decoder[decoder != 0]
-                
-                st.info('Model Output (Tokens):')
-                st.code(str(decoder))
+                    segments = split_into_segments(video_np, SEGMENT_LENGTH)
+
+                    if not segments:
+                        raise ValueError("No valid frame segments could be created from the video.")
+
+                    segment_results: List[Tuple[List[int], str]] = []
+                    all_tokens: List[int] = []
+
+                    for idx, segment in enumerate(segments, start=1):
+                        segment_tensor = tf.convert_to_tensor(segment, dtype=tf.float32)
+                        yhat = model.predict(tf.expand_dims(segment_tensor, axis=0), verbose=0)
+                        decoded = tf.keras.backend.ctc_decode(
+                            yhat, [SEGMENT_LENGTH], greedy=True
+                        )[0][0].numpy()
+                        decoded = decoded[decoded != 0]
+                        tokens_list = decoded.tolist()
+                        all_tokens.extend(tokens_list)
+
+                        if decoded.size > 0:
+                            tokens_tensor = tf.convert_to_tensor(decoded, dtype=tf.int64)
+                            text = tf.strings.reduce_join(num_to_char(tokens_tensor)).numpy().decode('utf-8')
+                        else:
+                            text = ""
+
+                        segment_results.append((tokens_list, text))
+
+                st.info('Model Output (Tokens per segment):')
+                for segment_idx, (tokens, text) in enumerate(segment_results, start=1):
+                    st.write(f"Segment {segment_idx}:")
+                    st.code(str(tokens))
+                    if text:
+                        st.caption(f"Decoded: {text}")
 
                 # Convert prediction to text
                 st.info('Final Prediction:')
-                if len(decoder) > 0:
-                    converted_prediction = tf.strings.reduce_join(num_to_char(decoder)).numpy().decode('utf-8')
+                if all_tokens:
+                    combined_tensor = tf.convert_to_tensor(all_tokens, dtype=tf.int64)
+                    converted_prediction = tf.strings.reduce_join(
+                        num_to_char(combined_tensor)
+                    ).numpy().decode('utf-8')
                     st.success(f"**{converted_prediction}**")
                 else:
                     st.warning("No meaningful prediction generated")
