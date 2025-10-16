@@ -141,14 +141,20 @@ import cv2
 import os
 import dlib
 import numpy as np
-import urllib
+import urllib.request
+
+try:
+    import streamlit as st
+except ImportError:  # When utils is used outside of Streamlit
+    st = None
 
 def download_dlib_model():
     model_url = "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
     model_path = "shape_predictor_68_face_landmarks.dat"
     
     if not os.path.exists(model_path):
-        st.info("Downloading dlib model...")
+        if st:
+            st.info("Downloading dlib model...")
         # Download compressed version
         compressed_path = model_path + ".bz2"
         urllib.request.urlretrieve(model_url, compressed_path)
@@ -159,6 +165,8 @@ def download_dlib_model():
             with open(model_path, 'wb') as f_out:
                 f_out.write(f_in.read())
         os.remove(compressed_path)
+        if st:
+            st.success("Facial landmark model downloaded.")
 download_dlib_model()
 
 predictor_path = "shape_predictor_68_face_landmarks.dat"

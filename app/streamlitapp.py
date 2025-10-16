@@ -95,31 +95,88 @@ if selected_video and selected_video != "Choose...":
             
 # Import all of the dependencies
 import streamlit as st
-import os 
-import imageio 
+import os
+import imageio
 import numpy as np
-import tensorflow as tf 
+import tensorflow as tf
 import tempfile
 import cv2
 import matplotlib.cm as cm
 
+from pathlib import Path
 import urllib.request
-import os
 import gdown
 
-def download_model_weights():
-    model_path = "checkpoint.weights.h5"
-    os.makedirs("models", exist_ok=True)
-    
-    if not os.path.exists(model_path):
-        st.info("Downloading model weights...")
-        
-        # Direct download link (if file is publicly shared)
-        url = "https://drive.google.com/file/d/1Rv81h5t_VP8ryrDUe9qtIsZAwe-0pL1p/view?usp=sharing"
-        gdown.download(url, model_path, quiet=False)
-        
-        st.success("Model weights downloaded successfully!")
-download_model_weights()
+WEIGHTS_FILENAME = "checkpoint.weights.h5"
+WEIGHTS_FILE_ID = "1Rv81h5t_VP8ryrDUe9qtIsZAwe-0pL1p"
+WEIGHTS_URL = f"https://drive.google.com/uc?id={WEIGHTS_FILE_ID}"
+
+
+def _candidate_weight_paths() -> list[Path]:
+    base_dir = Path(__file__).resolve().parent
+    root_dir = base_dir.parent
+    candidates = [
+        root_dir / WEIGHTS_FILENAME,
+        base_dir / WEIGHTS_FILENAME,
+        root_dir / "models" / WEIGHTS_FILENAME,
+        Path.cwd() / WEIGHTS_FILENAME,
+    ]
+    # Deduplicate while preserving order
+    seen = []
+    unique = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.append(candidate)
+            unique.append(candidate)
+    return unique
+
+
+def _is_valid_h5(path: Path) -> bool:
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        import h5py  # type: ignore
+    except ImportError:
+        # If h5py is unavailable, fall back to basic size check above.
+        return True
+    try:
+        with h5py.File(path, "r"):
+            return True
+    except Exception:
+        return False
+
+
+def download_model_weights() -> Path:
+    for candidate in _candidate_weight_paths():
+        if _is_valid_h5(candidate):
+            return candidate
+
+    target_path = _candidate_weight_paths()[0]
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    st.info("Downloading model weights...")
+    try:
+        result = gdown.download(WEIGHTS_URL, str(target_path), quiet=False, fuzzy=True)
+    except Exception as exc:
+        st.error(f"Failed to download model weights: {exc}")
+        st.stop()
+
+    if result is None or not _is_valid_h5(target_path):
+        try:
+            if target_path.exists():
+                target_path.unlink()
+        except Exception:
+            pass
+        st.error(
+            "Downloaded weights file is invalid. Please verify the Google Drive link."
+        )
+        st.stop()
+
+    st.success("Model weights downloaded successfully!")
+    return target_path
+
+
+MODEL_WEIGHTS_PATH = download_model_weights()
 
 
 def download_dlib_model():
