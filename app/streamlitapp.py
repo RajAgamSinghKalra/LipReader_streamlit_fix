@@ -189,7 +189,7 @@ def prepare_viridis_gif(video_frames):
         st.error(f"Error creating GIF: {e}")
         return None
 
-# File uploader - main functionality for deployed app
+'''# File uploader - main functionality for deployed app
 uploaded_file = st.file_uploader("Upload a video file", type=['mp4', 'avi', 'mov', 'mkv', 'webm', 'mpg'])
 
 if uploaded_file is not None:
@@ -298,8 +298,107 @@ if uploaded_file is not None:
                 if os.path.exists('test_video.mp4'):
                     os.remove('test_video.mp4')
             except:
-                pass
+                pass'''
 
+
+# File uploader - main functionality for deployed app
+uploaded_file = st.file_uploader("Upload a video file", type=['mp4', 'avi', 'mov', 'mkv', 'webm', 'mpg'])
+
+if uploaded_file is not None:
+    # Save uploaded file to temporary location with correct extension
+    file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+    
+    # Create temporary file with proper handling
+    if file_extension == '.mpg':
+        temp_suffix = '.mpg'
+    else:
+        temp_suffix = file_extension
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=temp_suffix) as tmp_file:
+        tmp_file.write(uploaded_file.getvalue())
+        temp_video_path = tmp_file.name
+
+    # Generate two columns 
+    col1, col2 = st.columns(2)
+
+    # Rendering the video 
+    with col1: 
+        st.info('Uploaded video')
+        
+        # Display the uploaded video directly from memory
+        uploaded_file.seek(0)  # Reset file pointer
+        video_bytes = uploaded_file.read()
+        st.video(video_bytes)
+
+    with col2: 
+        st.info('Processing video...')
+        try:
+            with st.spinner('Loading and processing video...'):
+                # Load and process video using the temporary file
+                video = load_data(tf.convert_to_tensor(temp_video_path))
+            
+            if video is not None and len(video) > 0:
+                st.success(f"Video loaded successfully! Shape: {video.shape}")
+                
+                # Process for GIF
+                with st.spinner('Creating visualization...'):
+                    video_viridis = prepare_viridis_gif(video)
+                
+                if video_viridis is not None and len(video_viridis) > 0:
+                    # Save GIF
+                    imageio.mimsave('animation.gif', video_viridis, fps=10)
+                    st.image('animation.gif', width=400, caption='What the model sees (mouth crops)')
+                else:
+                    st.error("Failed to process video frames for visualization")
+                
+                # Prediction
+                st.info('Making prediction...')
+                with st.spinner('Running model prediction...'):
+                    model = load_model()
+                    
+                    # Ensure video has correct shape for prediction
+                    if video.shape[0] < 75:
+                        st.warning(f"Video has {video.shape[0]} frames. Padding to 75.")
+                        padding = np.zeros((75 - video.shape[0], video.shape[1], video.shape[2], video.shape[3]))
+                        video = np.concatenate([video, padding], axis=0)
+                    elif video.shape[0] > 75:
+                        st.warning(f"Video has {video.shape[0]} frames. Truncating to 75.")
+                        video = video[:75]
+                    
+                    yhat = model.predict(tf.expand_dims(video, axis=0), verbose=0)
+                    decoder = tf.keras.backend.ctc_decode(yhat, [75], greedy=True)[0][0].numpy()
+                    
+                    # Filter out padding tokens (usually 0)
+                    decoder = decoder[decoder != 0]
+                
+                st.info('Model Output (Tokens):')
+                st.code(str(decoder))
+
+                # Convert prediction to text
+                st.info('Final Prediction:')
+                if len(decoder) > 0:
+                    converted_prediction = tf.strings.reduce_join(num_to_char(decoder)).numpy().decode('utf-8')
+                    st.success(f"**{converted_prediction}**")
+                else:
+                    st.warning("No meaningful prediction generated")
+            else:
+                st.error("No video frames were loaded. The video might be incompatible.")
+                
+        except Exception as e:
+            st.error(f"Error processing video: {str(e)}")
+            st.info("This might be due to:")
+            st.write("- Video format not supported")
+            st.write("- Video too short/long")
+            st.write("- Face not detected in video")
+        finally:
+            # Clean up temporary files
+            try:
+                if os.path.exists(temp_video_path):
+                    os.unlink(temp_video_path)
+                if os.path.exists('animation.gif'):
+                    os.remove('animation.gif')
+            except:
+                pass
 # Add some instructions
 with st.expander("ℹ️ How to use this app"):
     st.write("""
