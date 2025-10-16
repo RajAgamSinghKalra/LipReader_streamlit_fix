@@ -3,6 +3,6 @@ opencv-python
 cmake
 gdown
 imageio
-dlib
+dlib-20.0.0-cp313-cp313-win_amd64.whl
 matplotlib
 numpy
