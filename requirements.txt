@@ -1,5 +1,6 @@
 tensorflow
 opencv-python
+oprncv-python-headless
 cmake
 gdown
 imageio
