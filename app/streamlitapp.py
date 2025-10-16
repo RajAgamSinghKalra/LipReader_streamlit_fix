@@ -119,6 +119,7 @@ def download_model_weights():
         gdown.download(url, model_path, quiet=False)
         
         st.success("Model weights downloaded successfully!")
+download_model_weights()
 
 
 def download_dlib_model():
@@ -137,6 +138,7 @@ def download_dlib_model():
             with open(model_path, 'wb') as f_out:
                 f_out.write(f_in.read())
         os.remove(compressed_path)
+download_dlib_model()
 
 # Set the layout to the streamlit app as wide 
 st.set_page_config(layout='wide')
