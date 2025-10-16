@@ -1,5 +1,5 @@
 import os
-
+from typing import List
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 
 '''# Import all of the dependencies
@@ -252,27 +252,27 @@ def prepare_viridis_gif(video_frames):
         return None
 
 
-def resample_to_segment(frames: np.ndarray, segment_length: int = SEGMENT_LENGTH) -> np.ndarray:
-    """Resample/pad frames to the target length while preserving the whole clip."""
+def split_into_segments(frames: np.ndarray, segment_length: int = SEGMENT_LENGTH) -> List[np.ndarray]:
+    """Split frames into contiguous 75-frame segments, padding the final chunk."""
     if frames.ndim != 4:
         raise ValueError(f"Expected video frames with 4 dimensions, got shape {frames.shape}")
 
     total_frames = frames.shape[0]
     if total_frames == 0:
-        return np.zeros((segment_length, *frames.shape[1:]), dtype=frames.dtype)
+        return []
 
-    if total_frames == segment_length:
-        return frames
+    segments: List[np.ndarray] = []
+    for start in range(0, total_frames, segment_length):
+        chunk = frames[start : start + segment_length]
+        if chunk.shape[0] == 0:
+            continue
+        if chunk.shape[0] < segment_length:
+            pad_frame = chunk[-1][None, ...]
+            padding = np.repeat(pad_frame, segment_length - chunk.shape[0], axis=0)
+            chunk = np.concatenate([chunk, padding], axis=0)
+        segments.append(chunk)
 
-    if total_frames < segment_length:
-        pad_count = segment_length - total_frames
-        pad_frame = frames[-1][None, ...]
-        padding = np.repeat(pad_frame, pad_count, axis=0)
-        return np.concatenate([frames, padding], axis=0)
-
-    # total_frames > segment_length: pick evenly spaced indices across the clip
-    indices = np.linspace(0, total_frames - 1, segment_length).astype(int)
-    return frames[indices]
+    return segments
 
 '''# File uploader - main functionality for deployed app
 uploaded_file = st.file_uploader("Upload a video file", type=['mp4', 'avi', 'mov', 'mkv', 'webm', 'mpg'])
@@ -463,21 +463,40 @@ if uploaded_file is not None:
                 st.info('Making prediction...')
                 with st.spinner('Running model prediction...'):
                     model = load_model()
-                    resampled_frames = resample_to_segment(video_np, SEGMENT_LENGTH)
-                    segment_tensor = tf.convert_to_tensor(resampled_frames, dtype=tf.float32)
-                    yhat = model.predict(tf.expand_dims(segment_tensor, axis=0), verbose=0)
-                    decoded = tf.keras.backend.ctc_decode(
-                        yhat, [SEGMENT_LENGTH], greedy=True
+                    segments = split_into_segments(video_np, SEGMENT_LENGTH)
+
+                    if not segments:
+                        raise ValueError("No valid frame segments could be created from the video.")
+
+                    segment_tokens: List[List[int]] = []
+                    logits_list: List[np.ndarray] = []
+
+                    for idx, segment in enumerate(segments, start=1):
+                        segment_tensor = tf.convert_to_tensor(segment, dtype=tf.float32)
+                        yhat = model.predict(tf.expand_dims(segment_tensor, axis=0), verbose=0)
+                        logits_list.append(yhat)
+
+                        decoded = tf.keras.backend.ctc_decode(
+                            yhat, [SEGMENT_LENGTH], greedy=True
+                        )[0][0].numpy()
+                        decoded = decoded[decoded != 0]
+                        segment_tokens.append(decoded.tolist())
+
+                    combined_logits = np.concatenate(logits_list, axis=1)
+                    total_timesteps = combined_logits.shape[1]
+                    full_decoded = tf.keras.backend.ctc_decode(
+                        combined_logits, [total_timesteps], greedy=True
                     )[0][0].numpy()
-                    decoded = decoded[decoded != 0]
+                    full_decoded = full_decoded[full_decoded != 0]
 
-                st.info('Model Output (Tokens):')
-                st.code(str(decoded.tolist()))
+                st.info('Model Output (Tokens per segment):')
+                for segment_idx, tokens in enumerate(segment_tokens, start=1):
+                    st.write(f"Segment {segment_idx}:")
+                    st.code(str(tokens))
 
-                # Convert prediction to text
                 st.info('Final Prediction:')
-                if decoded.size > 0:
-                    tokens_tensor = tf.convert_to_tensor(decoded, dtype=tf.int64)
+                if full_decoded.size > 0:
+                    tokens_tensor = tf.convert_to_tensor(full_decoded, dtype=tf.int64)
                     converted_prediction = tf.strings.reduce_join(
                         num_to_char(tokens_tensor)
                     ).numpy().decode('utf-8')
