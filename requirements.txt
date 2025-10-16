@@ -1,5 +1,6 @@
+numpy==1.26.4
 tensorflow
-numpy
+
 ffmpeg-python
 #numpy<2
 #opencv-python
